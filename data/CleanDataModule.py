@@ -254,7 +254,7 @@ class PlexData(data.Dataset):
         return len(self.Y)
 
     def norm(self, x):
-        x = (x-torch.mean(x))/torch.std(x)
+        # x = (x-torch.mean(x))/torch.std(x)
         #x = (x-torch.mean(x))/torch.std(x)
         # return x
         # norm = tio.RescaleIntensity((0, 1))
@@ -288,7 +288,7 @@ class SemiPlexData(data.Dataset):
         return self.size
     
     def norm(self, x):
-        x = (x-torch.mean(x))/torch.std(x)
+        # x = (x-torch.mean(x))/torch.std(x)
         # x = (x-torch.mean(x))/torch.std(x)
         # return x
 
@@ -310,7 +310,6 @@ class GANDataset(data.Dataset):
     def __getitem__(self, index):
 
         idx_rand=torch.randint(low=0,high=self.size,size=(1,))[0]
-        idx_rand2=torch.randint(low=0,high=self.size,size=(1,))[0]
         x,y = self.Sup[index]
         x_u,_=self.Unsup[idx_rand]
         return x.float(), y.float(),x_u.float()

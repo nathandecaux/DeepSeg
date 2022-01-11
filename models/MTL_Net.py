@@ -24,14 +24,20 @@ class MTL(pl.LightningModule):
     def logger(self, value):
         self._logger = value
 
-    def __init__(self,n_channels=1,n_classes=2,n_filters_recon = 64, n_filters_seg = 16,n_conv_recon=2,n_conv_seg=1, n_features = 8,learning_rate=1e-4,weight_decay=1e-4,taa=False,ssl_args={'reco':False,'consistency':False},ckpt=None):
+    def __init__(self,n_channels=1,n_classes=2,n_filters_recon = 64, n_filters_seg = 16,n_conv_recon=2,n_conv_seg=1, n_features = 8,learning_rate=1e-4,weight_decay=1e-4,taa=False,ssl_args={'reco':False,'consistency':False},ckpt=None,criterion=None):
         super().__init__()
         self.n_classes = n_classes
         self.learning_rate=learning_rate
         self.weight_decay=weight_decay
         self.taa=taa
         self.ssl_args=ssl_args
-        self.segmentor= MTL_net(n_classes,n_filters_recon,n_filters_seg,n_conv_recon,n_conv_seg,n_features)            
+        self.segmentor= MTL_net(n_classes,n_filters_recon,n_filters_seg,n_conv_recon,n_conv_seg,n_features)
+        
+        self.criterion = criterion    
+        if self.criterion=='w-tversky':
+            self.tversky_hp=nn.Parameter(torch.ones(2)/2)
+            
+        print('criterion',self.criterion)
         print('Using MTL net_model without additional loss')
     def forward(self, x):
         return self.segmentor(x)
@@ -39,27 +45,40 @@ class MTL(pl.LightningModule):
     def training_step(self, batch, batch_nb):
         x,y=batch
         y_hat=self.forward(x)['sx']
-        loss=10*ko.losses.dice_loss(y_hat,y.long())
+        if self.criterion=='w-tversky':
+            y_oh = torch.moveaxis(F.one_hot(y.long(), self.n_classes), -1, 1)
+            y_hat=nn.Softmax()(y_hat)
+
+            PG=(y_hat[:,1,...]*y_oh[:,1,...]).mean()
+            P_G=(y_hat[:,1,...]*y_oh[:,0,...]).mean()
+            G_P=(y_oh[:,1,...]*y_hat[:,0,...]).mean()
+            loss=1-PG/(PG+nn.Softmax()(self.tversky_hp)[0]*P_G+nn.Softmax()(self.tversky_hp)[1]*G_P+1e-8)
+            
+            self.log('alpha',nn.Softmax()(self.tversky_hp)[0])
+            self.log('beta',nn.Softmax()(self.tversky_hp)[1])
+        else:
+            loss=ko.losses.dice_loss(y_hat,y.long())
         self.log('train_loss', loss)
         self.log('n_epoch',self.current_epoch)
         return loss
 
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
-        out = self(x)
-        y = y.cpu().detach()
-        if self.n_classes > 1:
-            out['sx'] = torch.argmax(out['sx'].cpu().detach(), 1, False)
-        pred_oh = torch.moveaxis(
-            F.one_hot(out['sx'].long(), self.n_classes), -1, 1)
-        y_oh = torch.moveaxis(F.one_hot(y.long(), self.n_classes), -1, 1)
-        dice_score = monai.metrics.compute_meandice(
-            pred_oh, y_oh, include_background=True).cpu().detach()
-        dice_score = torch.nan_to_num(dice_score)
-        self.log('val_accuracy', dice_score.mean())
-        for lab in range(dice_score.shape[-1]):
-            self.log(f'val_accuracy_lab{lab}', dice_score[:, lab].mean())
+        if self.current_epoch%10==0:
+            x, y = batch
+            out = self(x)
+            y = y.cpu().detach()
+            if self.n_classes > 1:
+                out['sx'] = torch.argmax(out['sx'].cpu().detach(), 1, False)
+            pred_oh = torch.moveaxis(
+                F.one_hot(out['sx'].long(), self.n_classes), -1, 1)
+            y_oh = torch.moveaxis(F.one_hot(y.long(), self.n_classes), -1, 1)
+            dice_score = monai.metrics.compute_meandice(
+                pred_oh, y_oh, include_background=True).cpu().detach()
+            dice_score = torch.nan_to_num(dice_score)
+            self.log('val_accuracy', dice_score.mean())
+            for lab in range(dice_score.shape[-1]):
+                self.log(f'val_accuracy_lab{lab}', dice_score[:, lab].mean())
 
     def test_step(self, batch, batch_nb):
         x, y = batch

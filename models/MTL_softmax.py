@@ -67,6 +67,7 @@ class MTL(pl.LightningModule):
             patch_size=patch_size,
             gan=ssl_args['gan']
         )
+        self.criterion=criterion
         if self.criterion=='w-tversky':
             self.tversky_hp=nn.Parameter(torch.ones(2)/2)
         if ckpt!=None:
@@ -164,6 +165,7 @@ class MTL(pl.LightningModule):
                 loss['recon_u'] = F.mse_loss(output_dict["rx_u"], x_u)
             if self.ssl_args['cons']:
                 if self.criterion=='w-tversky':
+                    #Work better with hard labels for output_dict["sx_u"]
                     y_oh = torch.moveaxis(F.one_hot(torch.argmax(output_dict["sx_u"], 1).long(), self.n_classes), -1, 1)
                     y_hat=nn.Softmax()(output_dict["sx_u_t"])
 
@@ -222,12 +224,9 @@ class MTL(pl.LightningModule):
 
             # g_opt.step(closure=closure)
 
-        if self.loss_weights['seg']=='auto':
-            self.log("sigma_seg", self.loss_model.sigmas["seg"])
-
         for k,v in self.ssl_args.items():
             if v and self.loss_weights[k]=='auto':
-                self.log(f"sigma_{k}", self.loss_model.sigmas[k])
+                self.log(f"sigma_{k}", nn.Softmax()(self.loss_model.sigmas)[self.loss_model.lw[k]])
 
         # self.log('loss', loss)
         self.log('n_epoch', self.current_epoch)
@@ -373,42 +372,23 @@ class MTL_loss(torch.nn.Module):
         super().__init__()
         start=1.
         self.lw={}
-        self.sigmas = nn.ParameterDict()
+        i=0
+        ssl_args['seg']=True
+        for k,v in loss_weights.items():
+            if v=='auto' and ssl_args[k]:
+                self.lw[k]=i
+                i+=1
+                
+        self.sigmas = nn.Parameter(torch.ones(i)/i)
         self.loss_weights=loss_weights
-        if loss_weights['seg']=='auto':
-            self.lw['seg']=start
 
-        for k,v in ssl_args.items():
-            if v and loss_weights[k] == 'auto': 
-                if 'cons' in k:
-                    self.lw[k]= start
-                if 'seg' in k:
-                    self.lw[k]= 1.
-                else:    
-                    self.lw[k]= start
-        self.set_dict(self.lw)
-
-    def set_dict(self, dic):
-        self.lw = dic
-        for k in dic.keys():
-            if dic[k] > 0:
-                self.sigmas[k] = nn.Parameter(torch.ones(1) * dic[k])
 
     def forward(self, loss_dict):
         loss = 0
         with torch.set_grad_enabled(True):
             for k in loss_dict.keys():
                 if k in self.lw.keys():
-                    if k=='cons' and 'recon_u' in self.lw.keys():
-                        loss +=0.5 * (1.001-nn.Tanh()(loss_dict['recon_u']))*loss_dict[k] / (nn.ReLU()(self.sigmas[k])+1e-2)**2 + torch.log(nn.ReLU()(self.sigmas[k])+1e-2)
-                    else:
-                        loss +=0.5 * loss_dict[k] / (nn.ReLU()(self.sigmas[k])+1e-5)**2 + torch.log(nn.ReLU()(self.sigmas[k])+1e-5)
-                    
-                else:
-                    if k=='cons' and 'recon_u' in self.lw.keys():
-                        loss +=(1.001-nn.Tanh()(loss_dict['recon_u']))*loss_dict[k]*self.loss_weights[k]
-                    else:
-                        loss+=self.loss_weights[k]*loss_dict[k]
+                    loss += nn.Softmax()(self.sigmas)[self.lw[k]]*loss_dict[k] 
         return loss
 
 

@@ -65,11 +65,11 @@ def get_fold(subjects,pool,train_size):
         for i,sub in enumerate(test):
                 test[i]=int(sub)
         return list(train),list(test),pool
-with open('benchmark/results/results_final.json') as f:
+with open('benchmark/results/results_2022.json') as f:
         results= json.load(f)
 
 trains,tests=[],[]
-experiences = ['UNet-final-2']#'MTL-recon-SSL-recon_u-cons-final','MTL-SSL-cons-final','MTL-recon-SSL-recon_u-final']
+experiences = ['UNet','MTL-SSL-cons-w-tversky']
 labels=['deltoid','infraspinatus','subscapularis','supraspinatus']
 
 n_iter_max=5
@@ -115,9 +115,8 @@ for lab,lab_name in enumerate(labels):
                                                 'n_features':8,
                                                 'supervised':True,
                                                 'ssl_args':{'cons':False,'recon':False,'recon_u':False,'gan':False},
-                                                'loss_weights':{'recon':0.05,'recon_u': 0.05, 'cons': 0.1,'seg':1},
-                                                # 'loss_weights':{'recon':'auto','recon_u': 'auto', 'cons': 'auto','seg':'auto'},
-                
+                                                # 'loss_weights':{'recon':0.05,'recon_u': 0.05, 'cons': 0.1,'seg':1},
+                                                'loss_weights':{'recon':'auto','recon_u': 'auto', 'cons': 'auto','seg':'auto'},
                                                 
                                         }
                                         if 'cons' in model:
@@ -131,13 +130,15 @@ for lab,lab_name in enumerate(labels):
                                 if 'SSL' in model:
                                         PARAMS['supervised']=False
                                         model_PARAMS['supervised']=False
-                                model_PARAMS['ckpt']=results[lab_name][max_sub]['UNet-final'][j]['ckpt_path']
+                                model_PARAMS['ckpt']=None#results[lab_name][max_sub]['UNet'][j]['ckpt_path']
+                                model_PARAMS['criterion']='w-tversky'
+
                                 pprint(PARAMS)
                                 pprint(model_PARAMS)
                                 exp=run(model,dataset,PARAMS,model_PARAMS=model_PARAMS,ckpt=ckpt)
                                 exp.update(PARAMS)
                                 results[lab_name][max_sub][model].append(exp)
-                                with open('benchmark/results/results_final.json','w') as f:
+                                with open('benchmark/results/results_2022.json','w') as f:
                                         json.dump(results,f)
 
 

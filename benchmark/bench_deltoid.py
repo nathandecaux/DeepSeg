@@ -1,10 +1,13 @@
+#%%
 from unittest import result
 import warnings
 dir='/home/nathan/DeepSeg'
+from collections import Counter
 
-
+import torch
 import contextlib
 import sys
+sys.path.append(dir)
 import io
 
 @contextlib.contextmanager
@@ -50,9 +53,11 @@ def get_fold(subjects,pool,train_size,end_of_pile=False):
                 pool=subjects
         else:
                 train=np.random.choice((np.array(list(pool))),train_size,replace=False)
+        #train=np.random.choice((np.array(list(subjects))),train_size,replace=False)
+        remainings=set(subjects)-set(train)
 
         test=set(subjects)-set(train)
-        pool=set(pool)-set(train)
+        # pool=set(pool)-set(train)
         train=list(train)
         test=list(test)
         for i,sub in enumerate(train):
@@ -62,8 +67,14 @@ def get_fold(subjects,pool,train_size,end_of_pile=False):
                 test[i]=int(sub)
         return list(train),list(test),pool
 
-with open('benchmark/results/results.json') as f:
-        results= json.load(f)
+with open(f'{dir}/benchmark/results/results_2022.json') as f:
+        try :
+                results= json.load(f)
+        except:
+                results=dict()
+
+list_test=[]
+list_train=[]
 pprint(results)
 n_iter_max=5
 PARAMS=dict()
@@ -74,11 +85,11 @@ for lab_idx,lab in enumerate(['deltoid']):
 
         if lab not in results.keys():
                 results[lab]=dict()
-        for max_sub in range(1,10):
+        for max_sub in range(1,11):
                 max_sub=str(max_sub)
                 if max_sub not in results[lab].keys():
                         results[lab][max_sub]=dict()
-                for model in ['UNet-2']:
+                for model in ['UNet']:
                         # print(results[lab][max_sub].keys())
                         if model not in results[lab][max_sub].keys():
                                 results[lab][max_sub][model]=[]
@@ -94,15 +105,21 @@ for lab_idx,lab in enumerate(['deltoid']):
                                 train_ids,test_ids,pool=get_fold(subjects,pool,int(max_sub),end_of_pile)
                                 PARAMS['subject_ids']=list(train_ids)
                                 print('train_ids',train_ids)
-                                PARAMS['test_ids']=list(test_ids)[::2]
+                                test_ids=list(test_ids)
+                                random.shuffle(test_ids)
+                                PARAMS['test_ids']=test_ids[::2]
+                                print(PARAMS['test_ids'])
                                 PARAMS['aug']=True
                                 PARAMS['lab']=lab_idx+1
-                                exp=run(model,lab,PARAMS)
-                                exp.update(PARAMS)
+                                # exp=run(model,lab,PARAMS)
+                                # exp.update(PARAMS)
                                 exp=run(model,'PLEX',PARAMS)
                                 exp.update(PARAMS)
-                                # exp.update({'model':model,'lab':lab,'max_sub':max_sub})
+                                exp.update({'model':model,'lab':lab,'max_sub':max_sub})
                                 results[lab][max_sub][model].append(exp)
-                                with open('benchmark/results/results.json','w') as f:
+                                with open('benchmark/results/results_2022.json','w') as f:
                                         json.dump(results,f)
                                         print('Saved results')
+
+
+# %%

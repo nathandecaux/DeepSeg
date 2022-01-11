@@ -6,7 +6,7 @@ from data.CleanDataModule import *
 from data.DMDDataModule import *
 from models.MTL_Net import MTL as UNet
 # from models.UNet import UNet
-from models.MTL import MTL
+from models.MTL_softmax import MTL
 import json
 import os
 import time
@@ -28,8 +28,8 @@ import time
 
 
 from visualisation.plotter import dice,meanDice2DfromVol
-# max_epochs=100
-max_steps=1000
+#max_epochs=1000
+max_steps=10000
 dm_default_PARAMS={
           'batch_size': 8,
           'limb': 'P',
@@ -37,7 +37,7 @@ dm_default_PARAMS={
           'aug':False,
           }
 UNet_PARAMS={
-            'learning_rate': 	1e-5,
+            'learning_rate': 	1e-4,
             'weight_decay' : 1e-4,
             'taa':False
 }
@@ -83,8 +83,9 @@ def get_model(name,dataset,model_PARAMS=None):
         patch_size=(416,312)
         mod_args.update({'n_classes':2})
     if 'UNet' in name:
+        mod_args.update(model_PARAMS)
         model = UNet(1,**mod_args)
-        model=model.load_from_checkpoint(model_PARAMS['ckpt'])
+        #model=model.load_from_checkpoint(model_PARAMS['ckpt'])
     elif name=='DR':
         mod_args.update(DR_PARAMS)
         model = Disentangled(1,**mod_args,patch_size=patch_size)
@@ -157,6 +158,7 @@ def train_and_eval(model,dm,name):
     test.update({'ckpt_path':renamed_ckpt})
     test['log_dir']=logger.log_dir
     return test
+
 
 
 
